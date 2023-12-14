@@ -18,6 +18,8 @@
 #include "QrCode.h"
 #include "QrCode_p.h"
 
+#include <memory>
+#include <QIODevice>
 #include <QByteArray>
 #include <QPainter>
 #include <QString>
@@ -114,11 +116,20 @@ void QrCode::writeSvg(QIODevice* outputDevice, const int dpi, const int margin) 
     painter.setBrush(brush);
 
     const int rowSize = d_ptr->m_qrcode->width;
-    unsigned char* dot = d_ptr->m_qrcode->data;
-    for (int y = 0; y < rowSize; ++y) {
+    // unsigned char* dot = d_ptr->m_qrcode->data;
+    /*for (int y = 0; y < rowSize; ++y) {
         for (int x = 0; x < rowSize; ++x) {
             if (quint8(0x01) == (static_cast<quint8>(*dot++) & quint8(0x01))) {
                 painter.drawRect(margin + x, margin + y, 1, 1);
+            }
+        }
+    }*/
+    for (int y = 0; y < rowSize; ++y) {
+        unsigned char* rowStart = d_ptr->m_qrcode->data + y * rowSize;
+        unsigned char* rowEnd = rowStart + rowSize;
+        for (unsigned char* pixel = rowStart; pixel < rowEnd; ++pixel) {
+            if (quint8(0x01) == (static_cast<quint8>(*pixel) & quint8(0x01))) {
+                painter.drawRect(margin + (pixel - rowStart), margin + y, 1, 1);
             }
         }
     }
