@@ -1,4 +1,5 @@
 /*
+ *  Copyright (C) 2026 KeePassXC Team <team@keepassxc.org>
  *  Copyright (C) 2014 Florian Geyer <blueice@fobos.de>
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -18,10 +19,16 @@
 #include "TestEntrySearcher.h"
 #include "core/Group.h"
 #include "core/Tools.h"
+#include "core/Totp.h"
 
 #include <QTest>
 
 QTEST_GUILESS_MAIN(TestEntrySearcher)
+
+void TestEntrySearcher::initTestCase()
+{
+    QLocale::setDefault(QLocale::c());
+}
 
 void TestEntrySearcher::init()
 {
@@ -364,7 +371,7 @@ void TestEntrySearcher::testSkipProtected()
         m_entrySearcher.search("_testProtected:apple _testAttribute:testE1 _testAttribute:testE2", m_rootGroup);
     QCOMPARE(m_searchResult, {});
 
-    // also move the protected term around to execurise the short-circut logic
+    // also move the protected term around to exercise the short-circuit logic
     m_searchResult = m_entrySearcher.search("_testAttribute:testE2 _testProtected:apple", m_rootGroup);
     QCOMPARE(m_searchResult, expectE2);
     m_searchResult = m_entrySearcher.search("_testAttribute:testE1 _testProtected:apple", m_rootGroup);
@@ -393,4 +400,43 @@ void TestEntrySearcher::testUUIDSearch()
 
     m_searchResult = m_entrySearcher.search("uuid:" + Tools::uuidToHex(uuid1), m_rootGroup);
     QCOMPARE(m_searchResult.count(), 1);
+}
+
+void TestEntrySearcher::testTotpSearch()
+{
+    auto entry1 = new Entry();
+    entry1->setGroup(m_rootGroup);
+    entry1->setTitle("Regular Entry");
+
+    auto entry2 = new Entry();
+    entry2->setGroup(m_rootGroup);
+    entry2->setTitle("TOTP Entry");
+    // Set up TOTP on entry2
+    auto totpSettings = Totp::createSettings("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", 6, 30);
+    entry2->setTotp(totpSettings);
+
+    auto entry3 = new Entry();
+    entry3->setGroup(m_rootGroup);
+    entry3->setTitle("Another TOTP Entry");
+    // Set up TOTP on entry3
+    auto totpSettings2 = Totp::createSettings("MFRGG43UEBUXGIDBKRWXAZLSMUQGG6LQ", 6, 30);
+    entry3->setTotp(totpSettings2);
+
+    // Test searching for TOTP entries
+    m_searchResult = m_entrySearcher.search("has:totp", m_rootGroup);
+    QCOMPARE(m_searchResult.count(), 2);
+    QVERIFY(m_searchResult.contains(entry2));
+    QVERIFY(m_searchResult.contains(entry3));
+    QVERIFY(!m_searchResult.contains(entry1));
+
+    // Test case insensitive search
+    m_searchResult = m_entrySearcher.search("has:TOTP", m_rootGroup);
+    QCOMPARE(m_searchResult.count(), 2);
+
+    // Test excluding TOTP entries
+    m_searchResult = m_entrySearcher.search("!has:totp", m_rootGroup);
+    QCOMPARE(m_searchResult.count(), 1);
+    QVERIFY(m_searchResult.contains(entry1));
+    QVERIFY(!m_searchResult.contains(entry2));
+    QVERIFY(!m_searchResult.contains(entry3));
 }

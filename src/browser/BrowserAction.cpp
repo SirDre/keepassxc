@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2023 KeePassXC Team <team@keepassxc.org>
+ *  Copyright (C) 2024 KeePassXC Team <team@keepassxc.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,10 +17,9 @@
 
 #include "BrowserAction.h"
 #include "BrowserMessageBuilder.h"
-#ifdef WITH_XC_BROWSER_PASSKEYS
 #include "BrowserPasskeys.h"
-#endif
 #include "BrowserSettings.h"
+#include "PasskeyUtils.h"
 #include "core/Global.h"
 #include "core/Tools.h"
 
@@ -109,12 +108,10 @@ QJsonObject BrowserAction::handleAction(QLocalSocket* socket, const QJsonObject&
         return handleGlobalAutoType(json, action);
     } else if (action.compare("get-database-entries", Qt::CaseSensitive) == 0) {
         return handleGetDatabaseEntries(json, action);
-#ifdef WITH_XC_BROWSER_PASSKEYS
     } else if (action.compare(BROWSER_REQUEST_PASSKEYS_GET) == 0) {
         return handlePasskeysGet(json, action);
     } else if (action.compare(BROWSER_REQUEST_PASSKEYS_REGISTER) == 0) {
         return handlePasskeysRegister(json, action);
-#endif
     }
 
     // Action was not recognized
@@ -518,7 +515,6 @@ QJsonObject BrowserAction::handleGlobalAutoType(const QJsonObject& json, const Q
     return buildResponse(action, browserRequest.incrementedNonce);
 }
 
-#ifdef WITH_XC_BROWSER_PASSKEYS
 QJsonObject BrowserAction::handlePasskeysGet(const QJsonObject& json, const QString& action)
 {
     if (!m_associated) {
@@ -541,7 +537,7 @@ QJsonObject BrowserAction::handlePasskeysGet(const QJsonObject& json, const QStr
     }
 
     const auto origin = browserRequest.getString("origin");
-    if (!origin.startsWith("https://")) {
+    if (!passkeyUtils()->isOriginAllowedWithLocalhost(browserSettings()->allowLocalhostWithPasskeys(), origin)) {
         return getErrorReply(action, ERROR_PASSKEYS_INVALID_URL_PROVIDED);
     }
 
@@ -574,17 +570,17 @@ QJsonObject BrowserAction::handlePasskeysRegister(const QJsonObject& json, const
     }
 
     const auto origin = browserRequest.getString("origin");
-    if (!origin.startsWith("https://")) {
-        return getErrorReply(action, ERROR_KEEPASS_ACTION_CANCELLED_OR_DENIED);
+    if (!passkeyUtils()->isOriginAllowedWithLocalhost(browserSettings()->allowLocalhostWithPasskeys(), origin)) {
+        return getErrorReply(action, ERROR_PASSKEYS_INVALID_URL_PROVIDED);
     }
 
+    const auto groupName = browserRequest.getString("groupName");
     const auto keyList = getConnectionKeys(browserRequest);
-    const auto response = browserService()->showPasskeysRegisterPrompt(publicKey, origin, keyList);
+    const auto response = browserService()->showPasskeysRegisterPrompt(publicKey, origin, groupName, keyList);
 
     const Parameters params{{"response", response}};
     return buildResponse(action, browserRequest.incrementedNonce, params);
 }
-#endif
 
 QJsonObject BrowserAction::decryptMessage(const QString& message, const QString& nonce)
 {

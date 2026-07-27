@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2019 KeePassXC Team <team@keepassxc.org>
+ *  Copyright (C) 2025 KeePassXC Team <team@keepassxc.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -31,68 +31,49 @@
 
 OpVaultReader::OpVaultReader(QObject* parent)
     : QObject(parent)
-    , m_error(false)
 {
 }
 
 OpVaultReader::~OpVaultReader() = default;
 
-Database* OpVaultReader::readDatabase(QDir& opdataDir, const QString& password)
+QSharedPointer<Database> OpVaultReader::convert(QDir& opdataDir, const QString& password)
 {
     if (!opdataDir.exists()) {
-        m_error = true;
-        m_errorStr = tr("Directory .opvault must exist");
-        return nullptr;
+        m_error = tr("Directory .opvault must exist");
+        return {};
     }
     if (!opdataDir.isReadable()) {
-        m_error = true;
-        m_errorStr = tr("Directory .opvault must be readable");
-        return nullptr;
+        m_error = tr("Directory .opvault must be readable");
+        return {};
     }
 
     // https://support.1password.com/opvault-design/#directory-layout
     QDir defaultDir = QDir(opdataDir);
     if (!defaultDir.cd("default")) {
-        m_error = true;
-        m_errorStr = tr("Directory .opvault/default must exist");
-        return nullptr;
+        m_error = tr("Directory .opvault/default must exist");
+        return {};
     }
     if (!defaultDir.isReadable()) {
-        m_error = true;
-        m_errorStr = tr("Directory .opvault/default must be readable");
-        return nullptr;
+        m_error = tr("Directory .opvault/default must be readable");
+        return {};
     }
 
     auto vaultName = opdataDir.dirName();
 
-    auto key = QSharedPointer<CompositeKey>::create();
-    key->addKey(QSharedPointer<PasswordKey>::create(password));
-
-    QScopedPointer<Database> db(new Database());
-    db->setKdf(KeePass2::uuidToKdf(KeePass2::KDF_ARGON2D));
-    db->setCipher(KeePass2::CIPHER_AES256);
-    db->setKey(key, true, false);
-    db->metadata()->setName(vaultName);
-
+    auto db = QSharedPointer<Database>::create();
     auto rootGroup = db->rootGroup();
-    rootGroup->setTimeInfo({});
-    rootGroup->setUpdateTimeinfo(false);
     rootGroup->setName(vaultName.remove(".opvault"));
-    rootGroup->setUuid(QUuid::createUuid());
 
     populateCategoryGroups(rootGroup);
 
     QFile profileJsFile(defaultDir.absoluteFilePath("profile.js"));
     QJsonObject profileJson = readAndAssertJsonFile(profileJsFile, "var profile=", ";");
     if (profileJson.isEmpty()) {
-        return nullptr;
+        return {};
     }
     if (!processProfileJson(profileJson, password, rootGroup)) {
         zeroKeys();
-        return nullptr;
-    }
-    if (profileJson.contains("uuid") and profileJson["uuid"].isString()) {
-        rootGroup->setUuid(Tools::hexToUuid(profileJson["uuid"].toString()));
+        return {};
     }
 
     QFile foldersJsFile(defaultDir.filePath("folders.js"));
@@ -100,7 +81,7 @@ Database* OpVaultReader::readDatabase(QDir& opdataDir, const QString& password)
         QJsonObject foldersJs = readAndAssertJsonFile(foldersJsFile, "loadFolders(", ");");
         if (!processFolderJson(foldersJs, rootGroup)) {
             zeroKeys();
-            return nullptr;
+            return {};
         }
     }
 
@@ -150,17 +131,17 @@ Database* OpVaultReader::readDatabase(QDir& opdataDir, const QString& password)
     }
 
     zeroKeys();
-    return db.take();
+    return db;
 }
 
 bool OpVaultReader::hasError()
 {
-    return m_error;
+    return !m_error.isEmpty();
 }
 
 QString OpVaultReader::errorString()
 {
-    return m_errorStr;
+    return m_error;
 }
 
 bool OpVaultReader::processProfileJson(QJsonObject& profileJson, const QString& password, Group* rootGroup)
@@ -177,43 +158,34 @@ bool OpVaultReader::processProfileJson(QJsonObject& profileJson, const QString& 
     }
     auto rootGroupTime = rootGroup->timeInfo();
     auto createdAt = static_cast<uint>(profileJson["createdAt"].toInt());
-    rootGroupTime.setCreationTime(QDateTime::fromTime_t(createdAt, Qt::UTC));
+    rootGroupTime.setCreationTime(QDateTime::fromSecsSinceEpoch(createdAt, Qt::UTC));
     auto updatedAt = static_cast<uint>(profileJson["updatedAt"].toInt());
-    rootGroupTime.setLastModificationTime(QDateTime::fromTime_t(updatedAt, Qt::UTC));
+    rootGroupTime.setLastModificationTime(QDateTime::fromSecsSinceEpoch(updatedAt, Qt::UTC));
     rootGroup->setUuid(Tools::hexToUuid(profileJson["uuid"].toString()));
 
-    const auto derivedKeys = deriveKeysFromPassPhrase(salt, password, iterations);
-    if (derivedKeys->error) {
-        m_error = true;
-        m_errorStr = derivedKeys->errorStr;
-        delete derivedKeys;
+    QScopedPointer derivedKeys(deriveKeysFromPassPhrase(salt, password, iterations));
+    if (!derivedKeys->error.isEmpty()) {
+        m_error = derivedKeys->error;
         return false;
     }
 
     QByteArray encKey = derivedKeys->encrypt;
     QByteArray hmacKey = derivedKeys->hmac;
-    delete derivedKeys;
 
-    auto masterKeys = decodeB64CompositeKeys(masterKeyB64, encKey, hmacKey);
-    if (masterKeys->error) {
-        m_error = true;
-        m_errorStr = masterKeys->errorStr;
-        delete masterKeys;
+    QScopedPointer masterKeys(decodeB64CompositeKeys(masterKeyB64, encKey, hmacKey));
+    if (!masterKeys->error.isEmpty()) {
+        m_error = masterKeys->error;
         return false;
     }
     m_masterKey = masterKeys->encrypt;
     m_masterHmacKey = masterKeys->hmac;
-    delete masterKeys;
-    auto overviewKeys = decodeB64CompositeKeys(overviewKeyB64, encKey, hmacKey);
-    if (overviewKeys->error) {
-        m_error = true;
-        m_errorStr = overviewKeys->errorStr;
-        delete overviewKeys;
+    QScopedPointer overviewKeys(decodeB64CompositeKeys(overviewKeyB64, encKey, hmacKey));
+    if (!overviewKeys->error.isEmpty()) {
+        m_error = overviewKeys->error;
         return false;
     }
     m_overviewKey = overviewKeys->encrypt;
     m_overviewHmacKey = overviewKeys->hmac;
-    delete overviewKeys;
 
     return true;
 }
@@ -266,12 +238,12 @@ bool OpVaultReader::processFolderJson(QJsonObject& foldersJson, Group* rootGroup
         bool timeInfoOk = false;
         if (folder.contains("created")) {
             auto createdTime = static_cast<uint>(folder["created"].toInt());
-            ti.setCreationTime(QDateTime::fromTime_t(createdTime, Qt::UTC));
+            ti.setCreationTime(QDateTime::fromSecsSinceEpoch(createdTime, Qt::UTC));
             timeInfoOk = true;
         }
         if (folder.contains("updated")) {
             auto updateTime = static_cast<uint>(folder["updated"].toInt());
-            ti.setLastModificationTime(QDateTime::fromTime_t(updateTime, Qt::UTC));
+            ti.setLastModificationTime(QDateTime::fromSecsSinceEpoch(updateTime, Qt::UTC));
             timeInfoOk = true;
         }
         // "tx" is modified by sync, not by user; maybe a custom attribute?
@@ -338,15 +310,13 @@ QJsonObject OpVaultReader::readAndAssertJsonFile(QFile& file, const QString& str
 OpVaultReader::DerivedKeyHMAC*
 OpVaultReader::decodeB64CompositeKeys(const QString& b64, const QByteArray& encKey, const QByteArray& hmacKey)
 {
-    auto result = new DerivedKeyHMAC();
 
     OpData01 keyKey01;
     if (!keyKey01.decodeBase64(b64, encKey, hmacKey)) {
-        result->error = true;
-        result->errorStr = tr("Unable to decode masterKey: %1").arg(keyKey01.errorString());
+        auto result = new DerivedKeyHMAC();
+        result->error = tr("Unable to decode masterKey: %1").arg(keyKey01.errorString());
         return result;
     }
-    delete result;
 
     const QByteArray keyKey = keyKey01.getClearText();
 
@@ -364,7 +334,6 @@ OpVaultReader::decodeB64CompositeKeys(const QString& b64, const QByteArray& encK
 OpVaultReader::DerivedKeyHMAC* OpVaultReader::decodeCompositeKeys(const QByteArray& keyKey)
 {
     auto result = new DerivedKeyHMAC;
-    result->error = false;
 
     auto digest = CryptoHash::hash(keyKey, CryptoHash::Sha512);
     result->encrypt = digest.left(32);
@@ -383,7 +352,6 @@ OpVaultReader::DerivedKeyHMAC*
 OpVaultReader::deriveKeysFromPassPhrase(QByteArray& salt, const QString& password, unsigned long iterations)
 {
     auto result = new DerivedKeyHMAC;
-    result->error = false;
 
     QByteArray out(64, '\0');
     try {
@@ -395,8 +363,7 @@ OpVaultReader::deriveKeysFromPassPhrase(QByteArray& salt, const QString& passwor
                            reinterpret_cast<const uint8_t*>(salt.constData()),
                            salt.size());
     } catch (std::exception& e) {
-        result->error = true;
-        result->errorStr = tr("Unable to derive master key: %1").arg(e.what());
+        result->error = tr("Unable to derive master key: %1").arg(e.what());
         return result;
     }
 

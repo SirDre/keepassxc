@@ -23,8 +23,7 @@
 #include <QSharedPointer>
 
 class AutoType;
-class AutoTypePlatformInterface;
-class AutoTypeTestInterface;
+class AutoTypePlatformTest;
 class Database;
 class Entry;
 class Group;
@@ -51,11 +50,12 @@ private slots:
     void testAutoTypeResults_data();
     void testAutoTypeSyntaxChecks();
     void testAutoTypeEffectiveSequences();
+    void testAutoTypeEmptyWindowAssociation();
+    void testAutoTypeTotp();
 
 private:
-    AutoTypePlatformInterface* m_platform;
-    AutoTypeTestInterface* m_test;
     AutoType* m_autoType;
+    AutoTypePlatformTest* m_test;
     QSharedPointer<Database> m_db;
     QList<QSharedPointer<Database>> m_dbList;
     Group* m_group;
@@ -64,6 +64,7 @@ private:
     Entry* m_entry3;
     Entry* m_entry4;
     Entry* m_entry5;
+    Entry* m_entry6;
 };
 
 #endif // KEEPASSX_TESTAUTOTYPE_H

@@ -19,10 +19,13 @@
 #ifndef KEEPASSX_DATABASEOPENWIDGET_H
 #define KEEPASSX_DATABASEOPENWIDGET_H
 
+#include <QPointer>
 #include <QScopedPointer>
 #include <QTimer>
 
 #include "gui/DialogyWidget.h"
+#include "gui/MessageWidget.h"
+#include "osutils/DeviceListener.h"
 
 class CompositeKey;
 class Database;
@@ -46,9 +49,12 @@ public:
     void enterKey(const QString& pw, const QString& keyFile);
     QSharedPointer<Database> database();
     bool unlockingDatabase();
+    void showMessage(const QString& text, MessageWidget::MessageType type, int autoHideTimeout);
 
     // Quick Unlock helper functions
-    bool isOnQuickUnlockScreen();
+    bool canPerformQuickUnlock() const;
+    bool isOnQuickUnlockScreen() const;
+    void toggleQuickUnlockScreen();
     void triggerQuickUnlock();
     void resetQuickUnlock();
 
@@ -56,8 +62,8 @@ signals:
     void dialogFinished(bool accepted);
 
 protected:
-    void showEvent(QShowEvent* event) override;
-    void hideEvent(QHideEvent* event) override;
+    bool event(QEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
     QSharedPointer<CompositeKey> buildDatabaseKey();
     void setUserInteractionLock(bool state);
 
@@ -71,17 +77,21 @@ protected slots:
     void reject();
 
 private slots:
-    void browseKeyFile();
-    void pollHardwareKey();
+    bool browseKeyFile();
+    void toggleHardwareKeyComponent(bool state);
+    void closeDatabase();
+    void pollHardwareKey(bool manualTrigger = false, int delay = 0);
     void hardwareKeyResponse(bool found);
-    void openHardwareKeyHelp();
-    void openKeyFileHelp();
 
 private:
+    QPointer<DeviceListener> m_deviceListener;
     bool m_pollingHardwareKey = false;
+    bool m_manualHardwareKeyRefresh = false;
     bool m_blockQuickUnlock = false;
     bool m_unlockingDatabase = false;
+    bool m_triedToQuit = false;
     QTimer m_hideTimer;
+    QTimer m_hideNoHardwareKeysFoundTimer;
 
     Q_DISABLE_COPY(DatabaseOpenWidget)
 };

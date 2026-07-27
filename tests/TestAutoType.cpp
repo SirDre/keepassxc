@@ -18,40 +18,35 @@
 
 #include "TestAutoType.h"
 
-#include <QPluginLoader>
+#include <QRegularExpression>
 #include <QTest>
 
 #include "autotype/AutoType.h"
-#include "autotype/AutoTypePlatformPlugin.h"
-#include "autotype/test/AutoTypeTestInterface.h"
+#include "autotype/test/AutoTypeTest.h"
 #include "core/Config.h"
 #include "core/Group.h"
-#include "core/Resources.h"
+#include "core/Totp.h"
 #include "crypto/Crypto.h"
 #include "gui/MessageBox.h"
 #include "gui/osutils/OSUtils.h"
+#include "util/TemporaryFile.h"
 
 QTEST_GUILESS_MAIN(TestAutoType)
 
 void TestAutoType::initTestCase()
 {
     QVERIFY(Crypto::init());
-    Config::createTempFileInstance();
+    QLocale::setDefault(QLocale::c());
+
+    // Create temporary config file
+    Config::createConfigFromFile(TemporaryFile::createTempConfigFile(), {});
     config()->set(Config::AutoTypeDelay, 1);
     config()->set(Config::Security_AutoTypeAsk, false);
     AutoType::createTestInstance();
 
-    QPluginLoader loader(resources()->pluginPath("keepassxc-autotype-test"));
-    loader.setLoadHints(QLibrary::ResolveAllSymbolsHint);
-    QVERIFY(loader.instance());
-
-    m_platform = qobject_cast<AutoTypePlatformInterface*>(loader.instance());
-    QVERIFY(m_platform);
-
-    m_test = qobject_cast<AutoTypeTestInterface*>(loader.instance());
-    QVERIFY(m_test);
-
     m_autoType = AutoType::instance();
+    m_test = dynamic_cast<AutoTypePlatformTest*>(m_autoType->platform());
+    QVERIFY(m_test);
 }
 
 void TestAutoType::init()
@@ -62,8 +57,7 @@ void TestAutoType::init()
     m_db = QSharedPointer<Database>::create();
     m_dbList.clear();
     m_dbList.append(m_db);
-    m_group = new Group();
-    m_db->setRootGroup(m_group);
+    m_group = m_db->rootGroup();
 
     AutoTypeAssociations::Association association;
 
@@ -74,6 +68,9 @@ void TestAutoType::init()
     association.window = "custom window";
     association.sequence = "{username}association{password}";
     m_entry1->autoTypeAssociations()->add(association);
+    // Create a totp with a short time step to test delayed typing
+    auto totpSettings = Totp::createSettings("NNSWK4DBONZXQYZB", Totp::DEFAULT_DIGITS, 2);
+    m_entry1->setTotp(totpSettings);
 
     m_entry2 = new Entry();
     m_entry2->setGroup(m_group);
@@ -124,6 +121,20 @@ void TestAutoType::init()
     m_entry5->setPassword("example5");
     m_entry5->setTitle("some title");
     m_entry5->setUrl("http://example.org");
+
+    m_entry6 = new Entry();
+    m_entry6->setGroup(m_group);
+    m_entry6->setPassword("example6");
+    m_entry6->setTitle("empty window test");
+    association.window = "";
+    association.sequence = "{S:Empty Window}";
+    m_entry6->autoTypeAssociations()->add(association);
+    association.window = "non-matching window";
+    association.sequence = "should not match";
+    m_entry6->autoTypeAssociations()->add(association);
+    association.window = "*notepad*";
+    association.sequence = "{USERNAME}";
+    m_entry6->autoTypeAssociations()->add(association);
 }
 
 void TestAutoType::cleanup()
@@ -132,10 +143,10 @@ void TestAutoType::cleanup()
 
 void TestAutoType::testInternal()
 {
-    QVERIFY(m_platform->activeWindowTitle().isEmpty());
+    QVERIFY(m_test->activeWindowTitle().isEmpty());
 
     m_test->setActiveWindowTitle("Test");
-    QCOMPARE(m_platform->activeWindowTitle(), QString("Test"));
+    QCOMPARE(m_test->activeWindowTitle(), QString("Test"));
 }
 
 void TestAutoType::testSingleAutoType()
@@ -328,6 +339,8 @@ void TestAutoType::testAutoTypeSyntaxChecks()
 
     QVERIFY2(AutoType::verifyAutoTypeSyntax("{NUMPAD1 3}", entry, error), error.toLatin1());
 
+    QVERIFY2(AutoType::verifyAutoTypeSyntax("{PGDN}", entry, error), error.toLatin1());
+
     QVERIFY2(AutoType::verifyAutoTypeSyntax("{S:SPECIALTOKEN}", entry, error), error.toLatin1());
     QVERIFY2(AutoType::verifyAutoTypeSyntax("{S:SPECIAL TOKEN}", entry, error), error.toLatin1());
     QVERIFY2(AutoType::verifyAutoTypeSyntax("{S:SPECIAL_TOKEN}", entry, error), error.toLatin1());
@@ -444,4 +457,55 @@ void TestAutoType::testAutoTypeEffectiveSequences()
     QCOMPARE(entry5->effectiveAutoTypeSequence(), QString());
     QCOMPARE(entry6->defaultAutoTypeSequence(), sequenceOrphan);
     QCOMPARE(entry6->effectiveAutoTypeSequence(), QString());
+}
+
+void TestAutoType::testAutoTypeEmptyWindowAssociation()
+{
+    auto assoc = m_entry6->autoTypeSequences("Windows Notepad");
+    QCOMPARE(assoc.size(), 2);
+    QVERIFY(assoc.contains("{S:Empty Window}"));
+
+    assoc = m_entry6->autoTypeSequences("Some Other Window");
+    QVERIFY(assoc.isEmpty());
+}
+
+void TestAutoType::testAutoTypeTotp()
+{
+    // Get the TOTP time step in milliseconds
+    auto totpStep = m_entry1->totpSettings()->step * 1000;
+    auto sequence = QString("{TOTP} {DELAY %1}{TOTP}").arg(QString::number(totpStep * 2));
+
+    // Test 1: Sequence with a 3 second delay before TOTP
+    m_autoType->performAutoTypeWithSequence(m_entry1, sequence);
+    auto typedChars = m_test->actionChars();
+
+    // The typed TOTP should be different between the first and second one
+    auto totpParts = m_test->actionChars().split(' ');
+    QCOMPARE(totpParts.size(), 2);
+    QCOMPARE(totpParts[0].size(), m_entry1->totpSettings()->digits);
+    QCOMPARE(totpParts[1].size(), m_entry1->totpSettings()->digits);
+    QVERIFY2(totpParts[0] != totpParts[1],
+             QString("Typed TOTP (%1) should differ from current TOTP (%2) due to delay")
+                 .arg(totpParts[0], totpParts[1])
+                 .toLatin1());
+
+    m_test->clearActions();
+
+    // Test TIMEOTP placeholder (KeePass2 Compatibility)
+    m_autoType->performAutoTypeWithSequence(m_entry1, "{TIMEOTP}");
+    typedChars = m_test->actionChars();
+    QCOMPARE(typedChars.size(), m_entry1->totpSettings()->digits);
+    // Verify that the typedchars are all numbers
+    QRegularExpression re("^\\d+$");
+    QVERIFY(re.match(typedChars).hasMatch());
+
+    m_test->clearActions();
+
+    // Test that TIMEOTP also works as an entry placeholder
+    m_entry1->setPassword("{TIMEOTP}");
+    m_autoType->performAutoTypeWithSequence(m_entry1, "{PASSWORD}");
+    typedChars = m_test->actionChars();
+    QCOMPARE(typedChars.size(), m_entry1->totpSettings()->digits);
+    // Verify that the typedchars are all numbers
+    QVERIFY(re.match(typedChars).hasMatch());
 }

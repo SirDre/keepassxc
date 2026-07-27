@@ -1,6 +1,6 @@
 /*
+ *  Copyright (C) 2025 KeePassXC Team <team@keepassxc.org>
  *  Copyright (C) 2011 Felix Geyer <debfx@fobos.de>
- *  Copyright (C) 2022 KeePassXC Team <team@keepassxc.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 
 #include "EditGroupWidget.h"
 #include "ui_EditGroupWidgetMain.h"
-#if defined(WITH_XC_BROWSER)
+#if defined(KPXC_FEATURE_BROWSER)
 #include "browser/BrowserService.h"
 #include "ui_EditGroupWidgetBrowser.h"
 #endif
@@ -30,10 +30,7 @@
 #include "gui/Font.h"
 #include "gui/Icons.h"
 #include "gui/MessageBox.h"
-
-#if defined(WITH_XC_KEESHARE)
 #include "keeshare/group/EditGroupPageKeeShare.h"
-#endif
 
 class EditGroupWidget::ExtraPage
 {
@@ -70,7 +67,7 @@ EditGroupWidget::EditGroupWidget(QWidget* parent)
     , m_editGroupWidgetMain(new QScrollArea())
     , m_editGroupWidgetIcons(new EditWidgetIcons())
     , m_editWidgetProperties(new EditWidgetProperties())
-#if defined(WITH_XC_BROWSER)
+#if defined(KPXC_FEATURE_BROWSER)
     , m_browserSettingsChanged(false)
     , m_browserUi(new Ui::EditGroupWidgetBrowser())
     , m_browserWidget(new QWidget(this))
@@ -81,14 +78,12 @@ EditGroupWidget::EditGroupWidget(QWidget* parent)
 
     addPage(tr("Group"), icons()->icon("document-edit"), m_editGroupWidgetMain);
     addPage(tr("Icon"), icons()->icon("preferences-desktop-icons"), m_editGroupWidgetIcons);
-#if defined(WITH_XC_BROWSER)
+#if defined(KPXC_FEATURE_BROWSER)
     if (config()->get(Config::Browser_Enabled).toBool()) {
         initializeBrowserPage();
     }
 #endif
-#if defined(WITH_XC_KEESHARE)
     addEditPage(new EditGroupPageKeeShare(this));
-#endif
     addPage(tr("Properties"), icons()->icon("document-properties"), m_editWidgetProperties);
 
     connect(m_mainUi->expireCheck, SIGNAL(toggled(bool)), m_mainUi->expireDatePicker, SLOT(setEnabled(bool)));
@@ -130,7 +125,7 @@ void EditGroupWidget::setupModifiedTracking()
     // Icon tab
     connect(m_editGroupWidgetIcons, SIGNAL(widgetUpdated()), SLOT(setModified()));
 
-#if defined(WITH_XC_BROWSER)
+#if defined(KPXC_FEATURE_BROWSER)
     if (config()->get(Config::Browser_Enabled).toBool()) {
         setupBrowserModifiedTracking();
     }
@@ -189,21 +184,23 @@ void EditGroupWidget::loadGroup(Group* group, bool create, const QSharedPointer<
         page.set(m_temporaryGroup.data(), m_db);
     }
 
-#ifdef WITH_XC_BROWSER
+#ifdef KPXC_FEATURE_BROWSER
     if (config()->get(Config::Browser_Enabled).toBool()) {
         auto inheritHideEntries = false;
         auto inheritSkipSubmit = false;
         auto inheritOnlyHttp = false;
         auto inheritNoHttp = false;
         auto inheritOmitWww = false;
+        auto inheritRestrictKey = QString();
 
         auto parent = group->parentGroup();
         if (parent) {
-            inheritHideEntries = parent->resolveCustomDataTriState(BrowserService::OPTION_HIDE_ENTRY);
-            inheritSkipSubmit = parent->resolveCustomDataTriState(BrowserService::OPTION_SKIP_AUTO_SUBMIT);
-            inheritOnlyHttp = parent->resolveCustomDataTriState(BrowserService::OPTION_ONLY_HTTP_AUTH);
-            inheritNoHttp = parent->resolveCustomDataTriState(BrowserService::OPTION_NOT_HTTP_AUTH);
-            inheritOmitWww = parent->resolveCustomDataTriState(BrowserService::OPTION_OMIT_WWW);
+            inheritHideEntries = parent->resolveBrowserOptionEnabled(BrowserService::OPTION_HIDE_ENTRY);
+            inheritSkipSubmit = parent->resolveBrowserOptionEnabled(BrowserService::OPTION_SKIP_AUTO_SUBMIT);
+            inheritOnlyHttp = parent->resolveBrowserOptionEnabled(BrowserService::OPTION_ONLY_HTTP_AUTH);
+            inheritNoHttp = parent->resolveBrowserOptionEnabled(BrowserService::OPTION_NOT_HTTP_AUTH);
+            inheritOmitWww = parent->resolveBrowserOptionEnabled(BrowserService::OPTION_OMIT_WWW);
+            inheritRestrictKey = parent->resolveCustomDataString(BrowserService::OPTION_RESTRICT_KEY);
         }
 
         // If the page has not been created at all, some of the elements are null
@@ -219,6 +216,7 @@ void EditGroupWidget::loadGroup(Group* group, bool create, const QSharedPointer<
         addTriStateItems(m_browserUi->browserIntegrationOnlyHttpAuthComboBox, inheritOnlyHttp);
         addTriStateItems(m_browserUi->browserIntegrationNotHttpAuthComboBox, inheritNoHttp);
         addTriStateItems(m_browserUi->browserIntegrationOmitWwwCombobox, inheritOmitWww);
+        addRestrictKeyComboBoxItems(m_db->metadata()->customData()->keys(), inheritRestrictKey);
 
         m_browserUi->browserIntegrationHideEntriesComboBox->setCurrentIndex(
             indexFromTriState(group->resolveCustomDataTriState(BrowserService::OPTION_HIDE_ENTRY, false)));
@@ -230,6 +228,7 @@ void EditGroupWidget::loadGroup(Group* group, bool create, const QSharedPointer<
             indexFromTriState(group->resolveCustomDataTriState(BrowserService::OPTION_NOT_HTTP_AUTH, false)));
         m_browserUi->browserIntegrationOmitWwwCombobox->setCurrentIndex(
             indexFromTriState(group->resolveCustomDataTriState(BrowserService::OPTION_OMIT_WWW, false)));
+        setRestrictKeyComboBoxIndex(group);
     } else if (hasPage(m_browserWidget)) {
         setPageHidden(m_browserWidget, true);
     }
@@ -282,7 +281,7 @@ void EditGroupWidget::apply()
         page.assign();
     }
 
-#ifdef WITH_XC_BROWSER
+#ifdef KPXC_FEATURE_BROWSER
     if (config()->get(Config::Browser_Enabled).toBool()) {
         if (!m_browserSettingsChanged) {
             return;
@@ -303,6 +302,7 @@ void EditGroupWidget::apply()
         m_temporaryGroup->setCustomDataTriState(
             BrowserService::OPTION_OMIT_WWW,
             triStateFromIndex(m_browserUi->browserIntegrationOmitWwwCombobox->currentIndex()));
+        setRestrictKeyCustomData(m_temporaryGroup->customData());
     }
 #endif
 
@@ -348,7 +348,7 @@ void EditGroupWidget::cancel()
     emit editFinished(false);
 }
 
-#ifdef WITH_XC_BROWSER
+#ifdef KPXC_FEATURE_BROWSER
 void EditGroupWidget::initializeBrowserPage()
 {
     addPage(tr("Browser Integration"), icons()->icon("internet-web-browser"), m_browserWidget);
@@ -444,3 +444,58 @@ Group::TriState EditGroupWidget::triStateFromIndex(int index)
         return Group::Inherit;
     }
 }
+
+#ifdef KPXC_FEATURE_BROWSER
+void EditGroupWidget::addRestrictKeyComboBoxItems(QStringList const& keyList, QString inheritValue)
+{
+    auto comboBox = m_browserUi->browserIntegrationRestrictKeyCombobox;
+
+    comboBox->clear();
+    comboBox->addItem(
+        tr("Inherit from parent group (%1)").arg(BrowserService::decodeCustomDataRestrictKey(inheritValue)));
+    comboBox->addItem(tr("Disable"));
+
+    comboBox->insertSeparator(2);
+
+    // Add all the browser keys to the combobox
+    for (const QString& key : keyList) {
+        if (key.startsWith(CustomData::BrowserKeyPrefix)) {
+            auto strippedKey = key;
+            strippedKey.remove(CustomData::BrowserKeyPrefix);
+            comboBox->addItem(strippedKey);
+        }
+    }
+}
+
+void EditGroupWidget::setRestrictKeyComboBoxIndex(const Group* group)
+{
+    auto comboBox = m_browserUi->browserIntegrationRestrictKeyCombobox;
+
+    if (!group || !group->customData()->contains(BrowserService::OPTION_RESTRICT_KEY)) {
+        comboBox->setCurrentIndex(0);
+        return;
+    }
+
+    auto key = group->customData()->value(BrowserService::OPTION_RESTRICT_KEY);
+    if (key.isEmpty()) {
+        comboBox->setCurrentIndex(1);
+    } else {
+        comboBox->setCurrentText(key);
+    }
+}
+
+// Set the customData regarding OPTION_RESTRICT_KEY
+void EditGroupWidget::setRestrictKeyCustomData(CustomData* customData)
+{
+    auto comboBox = m_browserUi->browserIntegrationRestrictKeyCombobox;
+    auto key = BrowserService::OPTION_RESTRICT_KEY;
+    auto idx = comboBox->currentIndex();
+    if (idx == 0) {
+        customData->remove(key);
+    } else if (idx == 1) {
+        customData->set(key, QString());
+    } else {
+        customData->set(key, comboBox->currentText());
+    }
+}
+#endif

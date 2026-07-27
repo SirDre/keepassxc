@@ -25,25 +25,22 @@
 #include <QRegularExpression>
 #include <QTranslator>
 
-#include "config-keepassx.h"
-#include "core/Config.h"
 #include "core/Resources.h"
 
 /**
  * Install all KeePassXC and Qt translators.
  */
-void Translator::installTranslators()
+void Translator::installTranslators(const QString& uiLanguage)
 {
     QStringList languages;
-    QString languageSetting = config()->get(Config::GUI_Language).toString();
-    if (languageSetting.isEmpty() || languageSetting == "system") {
+    if (uiLanguage.isEmpty() || uiLanguage == "system") {
         // NOTE: this is a workaround for the terrible way Qt loads languages
         // using the QLocale::uiLanguages() approach. Instead, we search each
         // language and all country variants in order before moving to the next.
         QLocale locale;
         languages = locale.uiLanguages();
     } else {
-        languages << languageSetting;
+        languages << uiLanguage;
     }
 
     // Always try to load english last
@@ -80,7 +77,7 @@ bool Translator::installTranslator(const QStringList& languages, const QString& 
 }
 
 /**
- * Install Qt5 base translator from the specified local search path or the default system path
+ * Install Qt6 base translator from the specified local search path or the default system path
  * if no qtbase_* translations were found at the local path.
  *
  * @param languages priority-ordered list of languages
@@ -124,8 +121,11 @@ QList<QPair<QString, QString>> Translator::availableLanguages()
             if (langcode == "la") {
                 // langcode "la" (Latin) is translated into "C" by QLocale::languageToString()
                 languageStr = "Latin";
-            }
-            if (langcode.contains("_")) {
+            } else if (langcode == "zh_CN") {
+                languageStr = "Chinese (Simplified)";
+            } else if (langcode == "zh_TW") {
+                languageStr = "Chinese (Traditional)";
+            } else if (langcode.contains("_")) {
                 languageStr += QString(" (%1)").arg(QLocale::countryToString(locale.country()));
             }
 

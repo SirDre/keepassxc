@@ -27,3 +27,8 @@ CMakePresets.json
 CMakeUserPresets.json
 .vs/
 out/
+\.clangd
+
+# vcpkg
+vcpkg_installed*/
+

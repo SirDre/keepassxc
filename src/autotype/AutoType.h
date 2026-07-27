@@ -28,10 +28,11 @@
 #include "AutoTypeAction.h"
 #include "AutoTypeMatch.h"
 
+#include "autotype/AutoTypePlatform.h"
+#include "core/Database.h"
+#include "core/Entry.h"
+
 class AutoTypePlatformInterface;
-class Database;
-class Entry;
-class QPluginLoader;
 
 class AutoType : public QObject
 {
@@ -48,11 +49,22 @@ public:
 
     inline bool isAvailable()
     {
-        return m_plugin;
+        return m_platform;
     }
+
+    inline bool hasWindowAccess()
+    {
+        return m_platform && m_platform->hasWindowAccess();
+    }
+    bool usesDesktopPortal() const;
 
     static AutoType* instance();
     static void createTestInstance();
+
+    AutoTypePlatformInterface* platform() const
+    {
+        return m_platform;
+    }
 
 public slots:
     void performGlobalAutoType(const QList<QSharedPointer<Database>>& dbList, const QString& search = {});
@@ -60,13 +72,13 @@ public slots:
 
 signals:
     void globalAutoTypeTriggered(const QString& search);
-    void autotypePerformed();
-    void autotypeRejected();
+    void autotypeFinished();
     void autotypeRetypeTimeout();
 
 private slots:
     void startGlobalAutoType(const QString& search);
-    void unloadPlugin();
+    void unload();
+    void resetAutoTypeState();
 
 private:
     enum WindowState
@@ -78,22 +90,18 @@ private:
 
     explicit AutoType(QObject* parent = nullptr, bool test = false);
     ~AutoType() override;
-    void loadPlugin(const QString& pluginPath);
     void executeAutoTypeActions(const Entry* entry,
                                 const QString& sequence = QString(),
                                 WId window = 0,
                                 AutoTypeExecutor::Mode mode = AutoTypeExecutor::Mode::NORMAL);
     void restoreWindowState();
-    void resetAutoTypeState();
 
     static QList<QSharedPointer<AutoTypeAction>>
     parseSequence(const QString& entrySequence, const Entry* entry, QString& error, bool syntaxOnly = false);
 
     QMutex m_inAutoType;
     QMutex m_inGlobalAutoTypeDialog;
-    QPluginLoader* m_pluginLoader;
-    AutoTypePlatformInterface* m_plugin;
-    AutoTypeExecutor* m_executor;
+    AutoTypePlatformInterface* m_platform;
     static AutoType* m_instance;
 
     QString m_windowTitleForGlobal;

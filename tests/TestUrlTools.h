@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2023 KeePassXC Team <team@keepassxc.org>
+ *  Copyright (C) 2025 KeePassXC Team <team@keepassxc.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 #ifndef KEEPASSXC_TESTURLTOOLS_H
 #define KEEPASSXC_TESTURLTOOLS_H
 
-#include "core/UrlTools.h"
+#include "gui/UrlTools.h"
 #include <QObject>
 #include <QPointer>
 
@@ -28,14 +28,11 @@ class TestUrlTools : public QObject
 
 private slots:
     void initTestCase();
-    void init();
-
     void testTopLevelDomain();
     void testIsIpAddress();
     void testIsUrlIdentical();
     void testIsUrlValid();
-
-private:
-    QPointer<UrlTools> m_urlTools;
+    void testIsUrlValidWithLooseComparison();
+    void testDomainHasIllegalCharacters();
 };
 #endif // KEEPASSXC_TESTURLTOOLS_H

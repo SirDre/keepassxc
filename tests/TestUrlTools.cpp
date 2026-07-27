@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2023 KeePassXC Team <team@keepassxc.org>
+ *  Copyright (C) 2026 KeePassXC Team <team@keepassxc.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -22,11 +22,7 @@ QTEST_GUILESS_MAIN(TestUrlTools)
 
 void TestUrlTools::initTestCase()
 {
-    m_urlTools = urlTools();
-}
-
-void TestUrlTools::init()
-{
+    QLocale::setDefault(QLocale::c());
 }
 
 void TestUrlTools::testTopLevelDomain()
@@ -35,6 +31,7 @@ void TestUrlTools::testTopLevelDomain()
     QList<QPair<QString, QString>> tldUrls{
         {QString("https://another.example.co.uk"), QString("co.uk")},
         {QString("https://www.example.com"), QString("com")},
+        {QString("https://example.com"), QString("com")},
         {QString("https://github.com"), QString("com")},
         {QString("http://test.net"), QString("net")},
         {QString("http://so.many.subdomains.co.jp"), QString("co.jp")},
@@ -42,13 +39,12 @@ void TestUrlTools::testTopLevelDomain()
         {QString("https://192.168.0.1:8000"), QString("192.168.0.1")},
         {QString("https://www.nic.ar"), QString("ar")},
         {QString("https://no.no.no"), QString("no")},
-        {QString("https://www.blogspot.com.ar"), QString("blogspot.com.ar")}, // blogspot.com.ar is a TLD
         {QString("https://jap.an.ide.kyoto.jp"), QString("ide.kyoto.jp")}, // ide.kyoto.jp is a TLD
         {QString("ar"), QString("ar")},
     };
 
     for (const auto& u : tldUrls) {
-        QCOMPARE(urlTools()->getTopLevelDomainFromUrl(u.first), u.second);
+        QCOMPARE(UrlTools::getTopLevelDomainFromUrl(u.first), u.second);
     }
 
     // Create list of URLs and expected base URL responses
@@ -60,14 +56,13 @@ void TestUrlTools::testTopLevelDomain()
         {QString("https://192.168.0.1"), QString("192.168.0.1")},
         {QString("https://192.168.0.1:8000"), QString("192.168.0.1")},
         {QString("https://www.nic.ar"), QString("nic.ar")},
-        {QString("https://www.blogspot.com.ar"), QString("www.blogspot.com.ar")}, // blogspot.com.ar is a TLD
         {QString("https://www.arpa"), QString("www.arpa")},
         {QString("https://jap.an.ide.kyoto.jp"), QString("an.ide.kyoto.jp")}, // ide.kyoto.jp is a TLD
         {QString("https://kobe.jp"), QString("kobe.jp")},
     };
 
     for (const auto& u : baseUrls) {
-        QCOMPARE(urlTools()->getBaseDomainFromUrl(u.first), u.second);
+        QCOMPARE(UrlTools::getBaseDomainFromUrl(u.first), u.second);
     }
 }
 
@@ -81,30 +76,36 @@ void TestUrlTools::testIsIpAddress()
     auto host6 = "fe80::1ff:fe23:4567:890a";
     auto host7 = "2001:20::1";
     auto host8 = "2001:0db8:85y3:0000:0000:8a2e:0370:7334"; // Not valid
+    auto host9 = "[::]";
+    auto host10 = "::";
+    auto host11 = "[2001:20::1]";
 
-    QVERIFY(!urlTools()->isIpAddress(host1));
-    QVERIFY(urlTools()->isIpAddress(host2));
-    QVERIFY(!urlTools()->isIpAddress(host3));
-    QVERIFY(urlTools()->isIpAddress(host4));
-    QVERIFY(urlTools()->isIpAddress(host5));
-    QVERIFY(urlTools()->isIpAddress(host6));
-    QVERIFY(urlTools()->isIpAddress(host7));
-    QVERIFY(!urlTools()->isIpAddress(host8));
+    QVERIFY(!UrlTools::isIpAddress(host1));
+    QVERIFY(UrlTools::isIpAddress(host2));
+    QVERIFY(!UrlTools::isIpAddress(host3));
+    QVERIFY(UrlTools::isIpAddress(host4));
+    QVERIFY(UrlTools::isIpAddress(host5));
+    QVERIFY(UrlTools::isIpAddress(host6));
+    QVERIFY(UrlTools::isIpAddress(host7));
+    QVERIFY(!UrlTools::isIpAddress(host8));
+    QVERIFY(UrlTools::isIpAddress(host9));
+    QVERIFY(UrlTools::isIpAddress(host10));
+    QVERIFY(UrlTools::isIpAddress(host11));
 }
 
 void TestUrlTools::testIsUrlIdentical()
 {
-    QVERIFY(urlTools()->isUrlIdentical("https://example.com", "https://example.com"));
-    QVERIFY(urlTools()->isUrlIdentical("https://example.com", "  https://example.com  "));
-    QVERIFY(!urlTools()->isUrlIdentical("https://example.com", "https://example2.com"));
-    QVERIFY(!urlTools()->isUrlIdentical("https://example.com/", "https://example.com/#login"));
-    QVERIFY(urlTools()->isUrlIdentical("https://example.com", "https://example.com/"));
-    QVERIFY(urlTools()->isUrlIdentical("https://example.com/", "https://example.com"));
-    QVERIFY(urlTools()->isUrlIdentical("https://example.com/  ", "  https://example.com"));
-    QVERIFY(!urlTools()->isUrlIdentical("https://example.com/", "  example.com"));
-    QVERIFY(urlTools()->isUrlIdentical("https://example.com/path/to/nowhere", "https://example.com/path/to/nowhere/"));
-    QVERIFY(!urlTools()->isUrlIdentical("https://example.com/", "://example.com/"));
-    QVERIFY(urlTools()->isUrlIdentical("ftp://127.0.0.1/", "ftp://127.0.0.1"));
+    QVERIFY(UrlTools::isUrlIdentical("https://example.com", "https://example.com"));
+    QVERIFY(UrlTools::isUrlIdentical("https://example.com", "  https://example.com  "));
+    QVERIFY(!UrlTools::isUrlIdentical("https://example.com", "https://example2.com"));
+    QVERIFY(!UrlTools::isUrlIdentical("https://example.com/", "https://example.com/#login"));
+    QVERIFY(UrlTools::isUrlIdentical("https://example.com", "https://example.com/"));
+    QVERIFY(UrlTools::isUrlIdentical("https://example.com/", "https://example.com"));
+    QVERIFY(UrlTools::isUrlIdentical("https://example.com/  ", "  https://example.com"));
+    QVERIFY(!UrlTools::isUrlIdentical("https://example.com/", "  example.com"));
+    QVERIFY(UrlTools::isUrlIdentical("https://example.com/path/to/nowhere", "https://example.com/path/to/nowhere/"));
+    QVERIFY(!UrlTools::isUrlIdentical("https://example.com/", "://example.com/"));
+    QVERIFY(UrlTools::isUrlIdentical("ftp://127.0.0.1/", "ftp://127.0.0.1"));
 }
 
 void TestUrlTools::testIsUrlValid()
@@ -117,6 +118,7 @@ void TestUrlTools::testIsUrlValid()
     urls["//github.com"] = true;
     urls["github.com/{}<>"] = false;
     urls["http:/example.com"] = false;
+    urls["http:/example.com."] = false;
     urls["cmd://C:/Toolchains/msys2/usr/bin/mintty \"ssh jon@192.168.0.1:22\""] = true;
     urls["file:///Users/testUser/Code/test.html"] = true;
     urls["{REF:A@I:46C9B1FFBD4ABC4BBB260C6190BAD20C} "] = true;
@@ -124,6 +126,48 @@ void TestUrlTools::testIsUrlValid()
     QHashIterator<QString, bool> i(urls);
     while (i.hasNext()) {
         i.next();
-        QCOMPARE(urlTools()->isUrlValid(i.key()), i.value());
+        QCOMPARE(UrlTools::isUrlValid(i.key()), i.value());
     }
+}
+
+void TestUrlTools::testIsUrlValidWithLooseComparison()
+{
+    QHash<QString, bool> urls;
+    urls[""] = true;
+    urls["\"https://github.com/login\""] = true;
+    urls["https://*.github.com/"] = true;
+    urls["*.github.com"] = true;
+    urls["https://*.com"] = false;
+    urls["https://*.computer.com"] = true; // TLD in domain (com) should not affect
+    urls["\"\""] = false;
+    urls["\"*.example.com\""] = false;
+    urls["http://*"] = false;
+    urls["*"] = false;
+    urls["****"] = false;
+    urls["*.co.jp"] = false;
+    urls["*.com"] = false;
+    urls["*.computer.com"] = true;
+    urls["*.computer.com/*com"] = true; // TLD in path should not affect this
+    urls["*com"] = false;
+    urls["*.com/"] = false;
+    urls["*.com/*"] = false;
+    urls["**.com/**"] = false;
+    urls["*.*"] = false;
+    urls["https://example.*"] = false;
+    urls["https://*.example.*"] = false;
+    urls["https://example.c*"] = false;
+    urls["https://myowndomain:8000"] = true;
+
+    QHashIterator<QString, bool> i(urls);
+    while (i.hasNext()) {
+        i.next();
+        QCOMPARE(UrlTools::isUrlValid(i.key(), true), i.value());
+    }
+}
+
+void TestUrlTools::testDomainHasIllegalCharacters()
+{
+    QVERIFY(!UrlTools::domainHasIllegalCharacters("example.com"));
+    QVERIFY(UrlTools::domainHasIllegalCharacters("domain has spaces.com"));
+    QVERIFY(UrlTools::domainHasIllegalCharacters("example#|.com"));
 }

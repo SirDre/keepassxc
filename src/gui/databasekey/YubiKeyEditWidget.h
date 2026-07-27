@@ -19,6 +19,7 @@
 #define KEEPASSXC_YUBIKEYEDITWIDGET_H
 
 #include "KeyComponentWidget.h"
+#include "gui/osutils/DeviceListener.h"
 
 namespace Ui
 {
@@ -43,6 +44,8 @@ protected:
     QWidget* componentEditWidget() override;
     void initComponentEditWidget(QWidget* widget) override;
     void initComponent() override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
 private slots:
     void hardwareKeyResponse(bool found);
@@ -51,6 +54,7 @@ private slots:
 private:
     const QScopedPointer<Ui::YubiKeyEditWidget> m_compUi;
     QPointer<QWidget> m_compEditWidget;
+    QPointer<DeviceListener> m_deviceListener;
     bool m_isDetected = false;
 };
 
